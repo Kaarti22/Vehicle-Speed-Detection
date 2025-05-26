@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import json
 from detector import YOLOv11Detector
 from tracker import Tracker
 from speed_estimator import SpeedEstimator
@@ -24,6 +25,9 @@ detector = YOLOv11Detector()
 tracker  = Tracker()
 speed_est = SpeedEstimator(real_distance_m=REAL_DISTANCE_M)
 
+speed_log = []
+logged_ids = set()
+
 frame_idx = 0
 
 while True:
@@ -42,14 +46,22 @@ while True:
         track_id = tr.track_id
         y_center = (y1 + y2) // 2
 
-        speed_kmh = speed_est.update_and_get_speed(
+        speed_kmph = speed_est.update_and_get_speed(
             track_id, y_center, timestamp, LINE1_Y, LINE2_Y
         )
 
+        if speed_kmph is not None and track_id not in logged_ids:
+            logged_ids.add(track_id)
+            speed_log.append({
+                "track_id": track_id,
+                "speed_kmph": speed_kmph,
+                "timestamp": round(timestamp, 2)
+            })
+
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
         label = f"ID {track_id}"
-        if speed_kmh is not None:
-            label += f" | {speed_kmh:.1f} km/h"
+        if speed_kmph is not None:
+            label += f" | {speed_kmph:.1f} km/h"
         cv2.putText(frame, label, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,255), 2)
 
     cv2.line(frame, (0, LINE1_Y), (width, LINE1_Y), (255,0,0), 2)
@@ -65,3 +77,6 @@ while True:
 cap.release()
 out.release()
 cv2.destroyAllWindows()
+
+with open("speed_log.json", "w") as f_json:
+    json.dump(speed_log, f_json, indent=2)
