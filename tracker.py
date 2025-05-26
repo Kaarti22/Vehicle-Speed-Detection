@@ -5,7 +5,7 @@ class Track:
     def __init__(self, bbox, track_id):
         self.kf = KalmanFilter(dim_x=7, dim_z=4)
         self.kf.x[:4] = np.reshape(bbox, (4, 1))
-        self.id = track_id
+        self.track_id = track_id
         self.hits = 0
         self.no_losses = 0
         self.box = bbox
