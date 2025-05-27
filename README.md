@@ -70,7 +70,7 @@ graph TD
 - Once calculated, the speed is shown **until the vehicle disappears** from view (not just 1 second).
 
 ### 5. **Logging System**
-- Logs are written to `project.log` using Python’s `logging` module.
+- Logs are written to `speed_analyzer.log` using Python’s `logging` module.
 - Actions such as frame read, detection, tracking, speed estimation, and errors are recorded.
 
 ---
@@ -86,7 +86,7 @@ vehicle-speed-detector/
 ├── track_video.py        # Main video processing and orchestration
 ├── speed_log.json        # Output speeds and timestamps
 ├── result.mp4            # Annotated output video
-├── project.log           # Log file for debugging and status
+├── speed_analyzer.log    # Log file for debugging and status
 ├── README.md             # Project documentation
 └── requirements.txt      # Python dependencies
 ```
@@ -125,7 +125,7 @@ ID 17 | 39.3 km/h
 4. **Output**
    - `result.mp4`: Annotated video
    - `speed_log.json`: JSON speed log
-   - `project.log`: Logs for each step
+   - `speed_analyzer.log`: Logs for each step
 
 ---
 
@@ -181,7 +181,7 @@ ID 17 | 39.3 km/h
 
 ---
 
-## 🧾 Logging Example (`project.log`)
+## 🧾 Logging Example (`speed_analyzer.log`)
 
 ```
 [INFO] Frame 47 read successfully.
