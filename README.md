@@ -36,6 +36,7 @@ graph TD
     D --> E[Speed Estimation Logic]
     E --> F[Overlay Annotations and Write to Video]
     F --> G[Save Speed Log as JSON]
+    G -- Yes --> H[Store t1]
     H --> I{Crossing Line 2?}
     I -- Yes --> J[Store t2 and Calculate Speed]
     J --> K[Display Speed & Log to JSON]
