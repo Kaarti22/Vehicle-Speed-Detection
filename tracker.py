@@ -9,6 +9,7 @@ class Track:
         self.hits = 0
         self.no_losses = 0
         self.box = bbox
+        self.speed = None
     
     def predict(self):
         self.kf.predict()

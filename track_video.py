@@ -4,6 +4,9 @@ import json
 from detector import YOLOv11Detector
 from tracker import Tracker
 from speed_estimator import SpeedEstimator
+from logger_config import setup_logger
+
+logger = setup_logger()
 
 VIDEO_PATH = "sample.mp4"
 LINE1_Y = 415
@@ -31,15 +34,23 @@ logged_ids = set()
 frame_idx = 0
 
 while True:
+    logger.info("Video processing started.")
+
     ret, frame = cap.read()
     if not ret:
+        logger.info("End of video reached or failed to read frame.")
         break
+
     frame_idx += 1
     timestamp = frame_idx / fps
+
+    logger.info(f"Processing frame {frame_idx}")
 
     dets_raw = detector.detect(frame)
     bboxes = [d[:4] for d in dets_raw]
     tracks = tracker.update(bboxes)
+
+    logger.info(f"Detections: {len(dets_raw)} vehicles")
 
     for tr in tracks:
         x1, y1, x2, y2 = [int(v) for v in tr.box]
@@ -51,6 +62,7 @@ while True:
         )
 
         if speed_kmph is not None and track_id not in logged_ids:
+            logger.info(f"Speed detected - Track ID: {track_id}, Speed: {speed_kmph} km/h at timestamp {timestamp:.2f}")
             logged_ids.add(track_id)
             speed_log.append({
                 "track_id": track_id,
@@ -58,16 +70,19 @@ while True:
                 "timestamp": round(timestamp, 2)
             })
 
+        if speed_kmph is not None:
+            tr.speed = speed_kmph
+
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
         label = f"ID {track_id}"
-        if speed_kmph is not None:
-            label += f" | {speed_kmph:.1f} km/h"
+        if tr.speed is not None:
+            label += f" | {tr.speed:.1f} km/h"
         cv2.putText(frame, label, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,255), 2)
 
     cv2.line(frame, (0, LINE1_Y), (width, LINE1_Y), (255,0,0), 2)
     cv2.line(frame, (0, LINE2_Y), (width, LINE2_Y), (0,0,255), 2)
 
-    cv2.imshow("Speed Demo", frame)
+    cv2.imshow("Vehicles Speed Detection", frame)
 
     out.write(frame)
 
