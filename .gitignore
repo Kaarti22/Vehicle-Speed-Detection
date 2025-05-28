@@ -4,3 +4,7 @@ __pycache__
 
 sample.mp4
 result.mp4
+
+inputs/
+outputs/
+temp/
