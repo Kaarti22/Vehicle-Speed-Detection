@@ -11,7 +11,7 @@ class YOLOv11Detector:
             for box in result.boxes:
                 cls = int(box.cls[0])
                 label = result.names[cls]
-                if label in ["car", "bus", "truck", "motorbike", "bicycle"]:
+                if label in ["car", "bus", "truck"]:
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     detections.append((x1, y1, x2, y2, label))
         return detections

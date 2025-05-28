@@ -11,7 +11,7 @@ logger = setup_logger()
 VIDEO_PATH = "sample.mp4"
 LINE1_Y = 415
 LINE2_Y = 450
-REAL_DISTANCE_M = 20.0
+REAL_DISTANCE_M = 10.0
 
 cap = cv2.VideoCapture(VIDEO_PATH)
 fps = cap.get(cv2.CAP_PROP_FPS)
@@ -73,11 +73,10 @@ while True:
         if speed_kmph is not None:
             tr.speed = speed_kmph
 
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
-        label = f"ID {track_id}"
-        if tr.speed is not None:
-            label += f" | {tr.speed:.1f} km/h"
-        cv2.putText(frame, label, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,255), 2)
+        if tr.speed is not None and tr.speed >= 5:
+            label = f"{tr.speed:.1f} km/h"
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
+            cv2.putText(frame, label, ((x1 + x2) // 2 - 30, (y1 + y2) // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
 
     cv2.line(frame, (0, LINE1_Y), (width, LINE1_Y), (255,0,0), 2)
     cv2.line(frame, (0, LINE2_Y), (width, LINE2_Y), (0,0,255), 2)
