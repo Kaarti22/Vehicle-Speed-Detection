@@ -25,7 +25,7 @@ if uploaded_file:
     input_path = os.path.join(INPUT_DIR, uploaded_file.name)
     with open(input_path, "wb") as f:
         f.write(uploaded_file.read())
-    
+
     logger.info("Video uploaded successfully.")
     st.success("Video uploaded successfully.")
 
@@ -38,39 +38,43 @@ if uploaded_file:
         cv2.imwrite(frame_path, frame)
         logger.info("Snapshot captured from video.")
 
-        st.subheader("Draw virtual lines")
+        st.subheader("Draw ROI Polygon (Region of Interest)")
         img = Image.open(frame_path)
         canvas_result = st_canvas(
-            fill_color="rgba(255, 165, 0, 0.3)",
+            fill_color="rgba(0, 255, 0, 0.3)",
             stroke_width=3,
-            stroke_color="#ff0000",
+            stroke_color="#00ff00",
             background_image=img,
             update_streamlit=True,
             height=img.height,
             width=img.width,
-            drawing_mode="line",
+            drawing_mode="polygon",
             key="canvas",
         )
 
-        line_coords = []
-        if canvas_result.json_data is not None:
-            for i, obj in enumerate(canvas_result.json_data["objects"]):
-                if obj["type"] == "line":
-                    x1 = obj["x1"] + obj["left"]
-                    y1 = obj["y1"] + obj["top"]
-                    x2 = obj["x2"] + obj["left"]
-                    y2 = obj["y2"] + obj["top"]
+        polygon_coords = []
 
-                    logger.info(f"Line {i+1}: From ({x1:.1f}, {y1:.1f}) to ({x2:.1f}, {y2:.1f})")
-                    st.write(f"Line {i+1}: From ({x1:.1f}, {y1:.1f}) to ({x2:.1f}, {y2:.1f})")
-                    line_coords.append(((x1, y1), (x2, y2)))
-        
-        if len(line_coords) >= 2:
-            distance = st.number_input("Enter real-world distance (in meters) between Line 1 and Line 2:", min_value=1.0)
+        if canvas_result.json_data is not None:
+            for obj in canvas_result.json_data["objects"]:
+                if obj["type"] == "polygon" and "path" in obj:
+                    polygon_coords = []
+                    for p in obj["path"]:
+                        if isinstance(p, list) and len(p) == 2:
+                            px, py = p
+                            polygon_coords.append((int(px + obj["left"]), int(py + obj["top"])))
+
+
+        if polygon_coords:
+            st.write("Polygon ROI points:")
+            for pt in polygon_coords:
+                st.write(f"({pt[0]}, {pt[1]})")
+
+            distance = st.number_input("Enter real-world distance (in meters) between two lines:", min_value=1.0)
+
             if st.button("Start Processing"):
+                # Save config
                 config = {
-                    "line1": line_coords[0],
-                    "line2": line_coords[1],
+                    "polygon_roi": polygon_coords,
                     "real_world_distance_m": distance,
                 }
 
@@ -78,17 +82,12 @@ if uploaded_file:
                 with open(config_path, "w") as f:
                     json.dump(config, f, indent=2)
 
-                logger.info("Virtual lines configuration updated.")
+                # Show feedback
+                st.success("Configuration saved. Processing video...")
 
                 st_frame = st.empty()
-                st.info("Processing and streaming video...")
-
                 output_path = os.path.join(OUTPUT_DIR, f"processed_{uploaded_file.name}")
 
                 for frame in process_video(input_path, config_path, output_path):
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     st_frame.image(frame_rgb, channels="RGB")
-                    time.sleep(0.03)
-                
-                logger.info("Video processing complete.")
-                st.success("Video processing complete")

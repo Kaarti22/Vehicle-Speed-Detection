@@ -1,83 +1,74 @@
 import cv2
 import json
-from detector import YOLOv11Detector
-from tracker import Tracker
-from speed_estimator import SpeedEstimator
-from logger_config import setup_logger
+import os
+from ultralytics import YOLO
+from collections import defaultdict
+from datetime import datetime
+import numpy as np
 
-logger = setup_logger()
+model = YOLO("yolo11n.pt")
 
-def process_video(video_path, config_path, output_path):
+def load_config(config_path):
     with open(config_path, "r") as f:
         config = json.load(f)
-    
-    (x1, y1), (x2, y2) = config["line1"]
-    (x3, y3), (x4, y4) = config["line2"]
-    LINE1_Y = int((y1 + y2) / 2)
-    LINE2_Y = int((y3 + y4) / 2)
-    REAL_DISTANCE_M = config["real_world_distance_m"]
+    return config
 
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
+def is_inside_polygon(point, polygon):
+    return cv2.pointPolygonTest(np.array(polygon, np.int32), point, False) >= 0
+
+def process_video(input_path, config_path, output_path):
+    config = load_config(config_path)
+    polygon_pts = config.get("polygon_roi", [])
+    distance_m = config.get("real_world_distance_m", 20)
+
+    if not polygon_pts:
+        raise ValueError("No polygon ROI defined in config.")
+
+    polygon_np = [(int(x), int(y)) for x, y in polygon_pts]
+
+    cap = cv2.VideoCapture(input_path)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    
+    fps = cap.get(cv2.CAP_PROP_FPS)
+
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
-    detector = YOLOv11Detector()
-    tracker = Tracker()
-    speed_est = SpeedEstimator(real_distance_m=REAL_DISTANCE_M)
-    
-    speed_log = []
-    logged_ids = set()
-    frame_idx = 0
+    vehicle_lo = defaultdict(dict)
+    frame_count = 0
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
-        frame_idx += 1
-        dets_raw = detector.detect(frame)
-        timestamp = frame_idx / fps
+        results = model(frame)
+        detections = results[0].boxes.xyxy.cpu().numpy()
+        confidences = results[0].boxes.conf.cpu().numpy()
+        classes = results[0].boxes.cls.cpu().numpy()
 
-        bboxes = [d[:4] for d in dets_raw]
-        tracks = tracker.update(bboxes)
+        for i, box in enumerate(detections):
+            class_id = int(classes[i])
+            conf = confidences[i]
 
-        for tr in tracks:
-            x1, y1, x2, y2 = [int(v) for v in tr.box]
-            track_id = tr.track_id
-            y_center = (y1 + y2) // 2
+            if class_id not in [2, 5, 7]:
+                continue
 
-            speed_kmph = speed_est.update_and_get_speed(
-                track_id, y_center, timestamp, LINE1_Y, LINE2_Y
-            )
+            x1, y1, x2, y2 = map(int, box)
+            cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
 
-            if speed_kmph is not None and track_id not in logged_ids:
-                logged_ids.add(track_id)
-                speed_log.append({
-                    "track_id": track_id,
-                    "speed_kmph": speed_kmph,
-                    "timestamp": round(timestamp, 2)
-                })
+            if not is_inside_polygon((cx, cy), polygon_np):
+                continue
 
-            if speed_kmph is not None:
-                tr.speed = speed_kmph
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.circle(frame, (cx, cy), 4, (0, 0, 255), -1)
 
-            if tr.speed is not None and tr.speed >= 5:
-                label = f"{tr.speed:.1f} km/h"
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
-                cv2.putText(frame, label, ((x1 + x2) // 2 - 30, (y1 + y2) // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
-
-        cv2.line(frame, (0, LINE1_Y), (width, LINE1_Y), (255,0,0), 2)
-        cv2.line(frame, (0, LINE2_Y), (width, LINE2_Y), (0,0,255), 2)
+        cv2.polylines(frame, [np.array(polygon_np, np.int32)], isClosed=True, color=(255, 0, 0), thickness=2)
 
         out.write(frame)
         yield frame
 
+        frame_count += 1
+
     cap.release()
     out.release()
-
-    with open("speed_log.json", "w") as f_json:
-        json.dump(speed_log, f_json, indent=2)
