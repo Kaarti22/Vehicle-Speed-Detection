@@ -20,16 +20,10 @@ def is_inside_polygon(point, polygon):
     return cv2.pointPolygonTest(np.array(polygon, np.int32), point, False) >= 0
 
 def line_crossed(center, line):
-    """Check if the center has crossed the virtual line (based on y-coordinates)."""
     (x1, y1), (x2, y2) = line
     return y1 <= center[1] <= y2 or y2 <= center[1] <= y1
 
 def process_video(input_path, config_path, output_path):
-    print("[INFO] process_video called")
-    print(f"[INFO] Input: {input_path}")
-    print(f"[INFO] Config: {config_path}")
-    print(f"[INFO] Output: {output_path}")
-
     config = load_config(config_path)
     roi_polygon = config["polygon_roi"]
     line1 = config["line_1"]
@@ -47,6 +41,7 @@ def process_video(input_path, config_path, output_path):
 
     estimator = SpeedEstimator(real_dist)
     track_log = []
+    persistent_speeds = {}
 
     frame_num = 0
     while cap.isOpened():
@@ -69,38 +64,36 @@ def process_video(input_path, config_path, output_path):
                 track.track_id, cy, frame_num / fps, line1[0][1], line2[0][1]
             )
 
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(frame, f"ID:{track.track_id}", (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
-
             if speed:
-                track.speed = speed
-                cv2.putText(frame, f"{speed} km/h", (x1, y2 + 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                persistent_speeds[track.track_id] = speed
 
-                # Log result
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+            if track.track_id in persistent_speeds:
+                show_speed = persistent_speeds[track.track_id]
+                cv2.putText(frame, f"{show_speed} km/h", (x1, y2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
                 track_log.append({
                     "video": video_name,
                     "track_id": track.track_id,
-                    "speed_kmph": speed,
+                    "speed_kmph": show_speed,
                     "timestamp": str(datetime.now()),
                     "frame": frame_num
                 })
 
-        # Draw ROI and lines
         cv2.polylines(frame, [np.array(roi_polygon, np.int32)], isClosed=True, color=(255, 0, 0), thickness=2)
         cv2.line(frame, line1[0], line1[1], (0, 255, 255), 2)
         cv2.line(frame, line2[0], line2[1], (0, 255, 255), 2)
 
         out.write(frame)
-        yield frame
+        display_frame = cv2.resize(frame, (800, int(800 * frame.shape[0] / frame.shape[1])))
+        yield display_frame
 
         frame_num += 1
 
     cap.release()
     out.release()
 
-    # Save CSV log
     output_dir = os.path.dirname(output_path)
     os.makedirs(output_dir, exist_ok=True)
     log_path = os.path.join(output_dir, f"speeds_{video_name}.csv")
@@ -109,4 +102,5 @@ def process_video(input_path, config_path, output_path):
         writer.writeheader()
         for row in track_log:
             writer.writerow(row)
+
     print(f"Processing complete. Output saved to {output_path} and log saved to {log_path}")

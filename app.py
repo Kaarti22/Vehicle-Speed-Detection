@@ -20,7 +20,6 @@ logger = setup_logger()
 st.set_page_config(layout="wide")
 st.title("🚗 Vehicle Speed Detection with ROI and Virtual Lines")
 
-# File upload
 uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
 if uploaded_file:
     input_path = os.path.join(INPUT_DIR, uploaded_file.name)
@@ -39,7 +38,7 @@ if uploaded_file:
         cv2.imwrite(snapshot_path, frame)
         img = Image.open(snapshot_path)
 
-        st.subheader("Step 1️⃣: Draw ROI Polygon Using OpenCV")
+        st.subheader("Step 1⃣: Draw ROI Polygon Using OpenCV")
 
         roi_polygon = []
         if st.button("🖼️ Open ROI Drawer"):
@@ -50,11 +49,10 @@ if uploaded_file:
             else:
                 st.warning("❌ ROI drawing was cancelled or not completed.")
 
-        # Load from session state
         roi_polygon = st.session_state.get("roi_polygon", [])
 
         if roi_polygon:
-            st.subheader("Step 2️⃣: Draw Two Virtual Lines Inside ROI")
+            st.subheader("Step 2⃣: Draw Two Virtual Lines Inside ROI")
             canvas_lines = st_canvas(
                 fill_color="rgba(255, 255, 255, 0.3)",
                 stroke_width=3,
@@ -80,7 +78,9 @@ if uploaded_file:
             if len(lines) >= 2:
                 st.success("✅ Two virtual lines captured.")
 
-                distance = st.number_input("Step 3️⃣: Enter real-world distance between lines (in meters):", min_value=1.0)
+                distance = st.number_input("Step 3⃣: Enter real-world distance between lines (in meters):", min_value=1.0)
+
+                show_live = st.checkbox("Show video live during processing", value=True)
 
                 if st.button("🚀 Start Processing"):
                     config = {
@@ -99,9 +99,10 @@ if uploaded_file:
 
                     st_frame = st.empty()
                     output_path = os.path.join(OUTPUT_DIR, f"processed_{uploaded_file.name}")
-                    for frame in process_video(input_path, config_path, output_path):
-                        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        st_frame.image(frame_rgb, channels="RGB", use_column_width=True)
+                    for idx, frame in enumerate(process_video(input_path, config_path, output_path)):
+                        if show_live and idx % 5 == 0:
+                            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                            st_frame.image(frame_rgb, channels="RGB")
 
                     st.success("✅ Processing complete. Check output video and database.")
             else:
