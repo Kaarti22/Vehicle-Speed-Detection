@@ -1,93 +1,110 @@
-import streamlit as st
+import sys
 import os
+
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+if ROOT_DIR not in sys.path:
+    sys.path.append(ROOT_DIR)
+
+import streamlit as st
 import cv2
 import json
-import time
 from PIL import Image
 from streamlit_drawable_canvas import st_canvas
-from track_video import process_video
 from logger_config import setup_logger
+from processing.track_video import process_video
+from config import INPUT_DIR, OUTPUT_DIR, TEMP_DIR
+from tools.draw_roi import draw_polygon_with_opencv
 
 logger = setup_logger()
 
-INPUT_DIR = "inputs"
-OUTPUT_DIR = "outputs"
-TEMP_DIR = "temp"
+st.set_page_config(layout="wide")
+st.title("🚗 Vehicle Speed Detection with ROI and Virtual Lines")
 
-os.makedirs(INPUT_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-os.makedirs(TEMP_DIR, exist_ok=True)
-
-st.title("Vehicle Speed Detection with Virtual Line UI")
-
+# File upload
 uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
 if uploaded_file:
     input_path = os.path.join(INPUT_DIR, uploaded_file.name)
     with open(input_path, "wb") as f:
         f.write(uploaded_file.read())
 
-    logger.info("Video uploaded successfully.")
-    st.success("Video uploaded successfully.")
+    logger.info("Video uploaded.")
+    st.success("✅ Video uploaded successfully!")
 
     cap = cv2.VideoCapture(input_path)
     ret, frame = cap.read()
     cap.release()
 
     if ret:
-        frame_path = os.path.join(TEMP_DIR, "snapshot.jpg")
-        cv2.imwrite(frame_path, frame)
-        logger.info("Snapshot captured from video.")
+        snapshot_path = os.path.join(TEMP_DIR, "snapshot.jpg")
+        cv2.imwrite(snapshot_path, frame)
+        img = Image.open(snapshot_path)
 
-        st.subheader("Draw ROI Polygon (Region of Interest)")
-        img = Image.open(frame_path)
-        canvas_result = st_canvas(
-            fill_color="rgba(0, 255, 0, 0.3)",
-            stroke_width=3,
-            stroke_color="#00ff00",
-            background_image=img,
-            update_streamlit=True,
-            height=img.height,
-            width=img.width,
-            drawing_mode="polygon",
-            key="canvas",
-        )
+        st.subheader("Step 1️⃣: Draw ROI Polygon Using OpenCV")
 
-        polygon_coords = []
+        roi_polygon = []
+        if st.button("🖼️ Open ROI Drawer"):
+            roi_polygon = draw_polygon_with_opencv(snapshot_path)
+            if roi_polygon:
+                st.session_state["roi_polygon"] = roi_polygon
+                st.success("✅ ROI polygon drawn and captured successfully.")
+            else:
+                st.warning("❌ ROI drawing was cancelled or not completed.")
 
-        if canvas_result.json_data is not None:
-            for obj in canvas_result.json_data["objects"]:
-                if obj["type"] == "polygon" and "path" in obj:
-                    polygon_coords = []
-                    for p in obj["path"]:
-                        if isinstance(p, list) and len(p) == 2:
-                            px, py = p
-                            polygon_coords.append((int(px + obj["left"]), int(py + obj["top"])))
+        # Load from session state
+        roi_polygon = st.session_state.get("roi_polygon", [])
 
+        if roi_polygon:
+            st.subheader("Step 2️⃣: Draw Two Virtual Lines Inside ROI")
+            canvas_lines = st_canvas(
+                fill_color="rgba(255, 255, 255, 0.3)",
+                stroke_width=3,
+                stroke_color="#ff0000",
+                background_image=img,
+                update_streamlit=True,
+                height=img.height,
+                width=img.width,
+                drawing_mode="line",
+                key="canvas_lines",
+            )
 
-        if polygon_coords:
-            st.write("Polygon ROI points:")
-            for pt in polygon_coords:
-                st.write(f"({pt[0]}, {pt[1]})")
+            lines = []
+            if canvas_lines.json_data:
+                for obj in canvas_lines.json_data["objects"]:
+                    if obj["type"] == "line":
+                        x1 = int(obj["x1"] + obj["left"])
+                        y1 = int(obj["y1"] + obj["top"])
+                        x2 = int(obj["x2"] + obj["left"])
+                        y2 = int(obj["y2"] + obj["top"])
+                        lines.append([(x1, y1), (x2, y2)])
 
-            distance = st.number_input("Enter real-world distance (in meters) between two lines:", min_value=1.0)
+            if len(lines) >= 2:
+                st.success("✅ Two virtual lines captured.")
 
-            if st.button("Start Processing"):
-                # Save config
-                config = {
-                    "polygon_roi": polygon_coords,
-                    "real_world_distance_m": distance,
-                }
+                distance = st.number_input("Step 3️⃣: Enter real-world distance between lines (in meters):", min_value=1.0)
 
-                config_path = os.path.join(TEMP_DIR, "line_config.json")
-                with open(config_path, "w") as f:
-                    json.dump(config, f, indent=2)
+                if st.button("🚀 Start Processing"):
+                    config = {
+                        "polygon_roi": roi_polygon,
+                        "line_1": lines[0],
+                        "line_2": lines[1],
+                        "real_world_distance_m": distance,
+                        "video_name": uploaded_file.name,
+                    }
 
-                # Show feedback
-                st.success("Configuration saved. Processing video...")
+                    config_path = os.path.join(TEMP_DIR, "config.json")
+                    with open(config_path, "w") as f:
+                        json.dump(config, f, indent=2)
 
-                st_frame = st.empty()
-                output_path = os.path.join(OUTPUT_DIR, f"processed_{uploaded_file.name}")
+                    st.success("🎥 Configuration saved. Starting processing...")
 
-                for frame in process_video(input_path, config_path, output_path):
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    st_frame.image(frame_rgb, channels="RGB")
+                    st_frame = st.empty()
+                    output_path = os.path.join(OUTPUT_DIR, f"processed_{uploaded_file.name}")
+                    for frame in process_video(input_path, config_path, output_path):
+                        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        st_frame.image(frame_rgb, channels="RGB", use_column_width=True)
+
+                    st.success("✅ Processing complete. Check output video and database.")
+            else:
+                st.warning("⚠️ Please draw at least two virtual lines inside the ROI.")
+        else:
+            st.warning("⚠️ Please draw ROI polygon first using the button above.")

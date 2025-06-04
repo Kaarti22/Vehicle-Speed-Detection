@@ -2,9 +2,9 @@ env
 
 __pycache__
 
-sample.mp4
-result.mp4
-
 inputs/
 outputs/
 temp/
+
+speed_analyzer.log
+20_30_40_50stop.mp4
