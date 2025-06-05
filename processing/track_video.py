@@ -8,6 +8,7 @@ from collections import defaultdict
 from models.detector import YOLOv11Detector
 from models.speed_estimator import SpeedEstimator
 from models.tracker import Tracker
+from tools.db_uploader import upload_csv_to_db
 from logger_config import setup_logger
 
 logger = setup_logger()
@@ -119,3 +120,5 @@ def process_video(input_path, config_path, output_path):
         for row in track_log:
             writer.writerow(row)
         logger.info(f"Video saved to {output_path}")
+
+    upload_csv_to_db(log_path)
