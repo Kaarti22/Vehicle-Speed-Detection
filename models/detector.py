@@ -1,4 +1,7 @@
 from ultralytics import YOLO
+from logger_config import setup_logger
+
+logger = setup_logger()
 
 class YOLOv11Detector:
     def __init__(self, model_path="yolo11n.pt"):
@@ -14,4 +17,5 @@ class YOLOv11Detector:
                 if label in ["car", "bus", "truck"]:
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     detections.append((x1, y1, x2, y2, label))
+        logger.debug(f"YOLOv11 detections: {len(detections)} vehicles")
         return detections

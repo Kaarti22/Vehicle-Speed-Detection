@@ -1,3 +1,6 @@
+from logger_config import setup_logger
+logger = setup_logger()
+
 class SpeedEstimator:
     def __init__(self, real_distance_m: float):
         self.real_distance = real_distance_m
@@ -13,6 +16,8 @@ class SpeedEstimator:
             rec['t2'] = t
             dt = rec['t2'] - rec['t1']
             if dt > 0:
-                return round(self.real_distance / dt * 3.6, 1)
+                speed = round(self.real_distance / dt * 3.6, 1)
+                logger.info(f"Speed calculated for track_id {track_id}: {speed} km/h")
+                return speed
 
         return None

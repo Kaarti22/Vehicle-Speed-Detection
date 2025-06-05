@@ -26,7 +26,7 @@ if uploaded_file:
     with open(input_path, "wb") as f:
         f.write(uploaded_file.read())
 
-    logger.info("Video uploaded.")
+    logger.info(f"Video saved to {input_path}")
     st.success("✅ Video uploaded successfully!")
 
     cap = cv2.VideoCapture(input_path)
@@ -38,6 +38,8 @@ if uploaded_file:
         cv2.imwrite(snapshot_path, frame)
         img = Image.open(snapshot_path)
 
+        logger.info("Extracted first frame for ROI drawing.")
+
         st.subheader("Step 1⃣: Draw ROI Polygon Using OpenCV")
 
         roi_polygon = []
@@ -45,8 +47,10 @@ if uploaded_file:
             roi_polygon = draw_polygon_with_opencv(snapshot_path)
             if roi_polygon:
                 st.session_state["roi_polygon"] = roi_polygon
+                logger.info("ROI polygon drawn successfully.")
                 st.success("✅ ROI polygon drawn and captured successfully.")
             else:
+                logger.warning("ROI drawing was not completed.")
                 st.warning("❌ ROI drawing was cancelled or not completed.")
 
         roi_polygon = st.session_state.get("roi_polygon", [])
@@ -76,6 +80,7 @@ if uploaded_file:
                         lines.append([(x1, y1), (x2, y2)])
 
             if len(lines) >= 2:
+                logger.info(f"Virtual lines captured: {lines[:2]}")
                 st.success("✅ Two virtual lines captured.")
 
                 distance = st.number_input("Step 3⃣: Enter real-world distance between lines (in meters):", min_value=1.0)
@@ -95,15 +100,19 @@ if uploaded_file:
                     with open(config_path, "w") as f:
                         json.dump(config, f, indent=2)
 
+                    logger.info(f"Processing started for {uploaded_file.name} with config: {config_path}")
                     st.success("🎥 Configuration saved. Starting processing...")
 
                     st_frame = st.empty()
                     output_path = os.path.join(OUTPUT_DIR, f"processed_{uploaded_file.name}")
+                    
                     for idx, frame in enumerate(process_video(input_path, config_path, output_path)):
                         if show_live and idx % 5 == 0:
+                            logger.debug(f"Displaying frame {idx}")
                             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                             st_frame.image(frame_rgb, channels="RGB")
 
+                    logger.info("Processing completed.")
                     st.success("✅ Processing complete. Check output video and database.")
             else:
                 st.warning("⚠️ Please draw at least two virtual lines inside the ROI.")

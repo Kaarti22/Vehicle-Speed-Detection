@@ -8,6 +8,9 @@ from collections import defaultdict
 from models.detector import YOLOv11Detector
 from models.speed_estimator import SpeedEstimator
 from models.tracker import Tracker
+from logger_config import setup_logger
+
+logger = setup_logger()
 
 detector = YOLOv11Detector()
 tracker = Tracker()
@@ -31,10 +34,14 @@ def process_video(input_path, config_path, output_path):
     real_dist = config["real_world_distance_m"]
     video_name = config["video_name"]
 
+    logger.info(f"Loaded config from {config_path}")
+
     cap = cv2.VideoCapture(input_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    logger.info(f"Video FPS: {fps}, Resolution: {width} * {height}")
 
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
@@ -45,13 +52,17 @@ def process_video(input_path, config_path, output_path):
 
     frame_num = 0
     while cap.isOpened():
-        print(f"[FRAME] Processing frame {frame_num}")
+        logger.debug(f"[FRAME] Processing frame {frame_num}")
         ret, frame = cap.read()
         if not ret:
+            logger.info("End of video reached or cannot read frame.")
             break
 
         detections = detector.detect(frame)
+        logger.debug(f"Detections in frame {frame_num}: {len(detections)}")
+
         tracks = tracker.update([det[:4] for det in detections])
+        logger.debug(f"Tracking {len(tracks)} objects in frame {frame_num}")
 
         for track in tracks:
             x1, y1, x2, y2 = map(int, track.box)
@@ -65,6 +76,7 @@ def process_video(input_path, config_path, output_path):
             )
 
             if speed:
+                logger.info(f"Speed for track_id {track.track_id}: {speed} km/h")
                 persistent_speeds[track.track_id] = speed
 
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
@@ -87,8 +99,8 @@ def process_video(input_path, config_path, output_path):
 
         out.write(frame)
         display_frame = cv2.resize(frame, (800, int(800 * frame.shape[0] / frame.shape[1])))
+        
         yield display_frame
-
         frame_num += 1
 
     cap.release()
@@ -97,10 +109,10 @@ def process_video(input_path, config_path, output_path):
     output_dir = os.path.dirname(output_path)
     os.makedirs(output_dir, exist_ok=True)
     log_path = os.path.join(output_dir, f"speeds_{video_name}.csv")
+    
     with open(log_path, "w", newline="") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=["video", "track_id", "speed_kmph", "timestamp", "frame"])
         writer.writeheader()
         for row in track_log:
             writer.writerow(row)
-
-    print(f"Processing complete. Output saved to {output_path} and log saved to {log_path}")
+        logger.info(f"Video saved to {output_path}")
