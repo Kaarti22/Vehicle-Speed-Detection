@@ -49,6 +49,7 @@ def process_video(input_path, config_path, output_path):
     estimator = SpeedEstimator(real_dist)
     track_log = []
     persistent_speeds = {}
+    logged_track_ids = set()
 
     frame_num = 0
     while cap.isOpened():
@@ -79,19 +80,21 @@ def process_video(input_path, config_path, output_path):
                 logger.info(f"Speed for track_id {track.track_id}: {speed} km/h")
                 persistent_speeds[track.track_id] = speed
 
+                if track.track_id not in logged_track_ids:
+                    track_log.append({
+                        "video": video_name,
+                        "track_id": track.track_id,
+                        "speed_kmph": speed,
+                        "timestamp": str(datetime.now()),
+                        "frame": frame_num
+                    })
+                    logged_track_ids.add(track.track_id)
+
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
             if track.track_id in persistent_speeds:
                 show_speed = persistent_speeds[track.track_id]
                 cv2.putText(frame, f"{show_speed} km/h", (x1, y2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-
-                track_log.append({
-                    "video": video_name,
-                    "track_id": track.track_id,
-                    "speed_kmph": show_speed,
-                    "timestamp": str(datetime.now()),
-                    "frame": frame_num
-                })
 
         cv2.polylines(frame, [np.array(roi_polygon, np.int32)], isClosed=True, color=(255, 0, 0), thickness=2)
         cv2.line(frame, line1[0], line1[1], (0, 255, 255), 2)
