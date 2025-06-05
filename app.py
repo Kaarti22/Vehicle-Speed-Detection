@@ -7,8 +7,9 @@ if ROOT_DIR not in sys.path:
 
 import streamlit as st
 import cv2
+import numpy as np
 import json
-from PIL import Image
+from PIL import Image, ImageDraw
 from streamlit_drawable_canvas import st_canvas
 from logger_config import setup_logger
 from processing.track_video import process_video
@@ -57,14 +58,28 @@ if uploaded_file:
 
         if roi_polygon:
             st.subheader("Step 2⃣: Draw Two Virtual Lines Inside ROI")
+
+            img_cv = np.array(img.convert('RGB'))
+            img_cv = cv2.cvtColor(img_cv, cv2.COLOR_RGB2BGR)
+
+            pts = np.array(roi_polygon, np.int32)
+            pts = pts.reshape((-1, 1, 2))
+            cv2.polylines(img_cv, [pts], isClosed=True, color=(255, 0, 0), thickness=2)
+
+            for point in roi_polygon:
+                cv2.circle(img_cv, tuple(point), 5, (0, 0, 255), -1)
+
+            img_with_roi = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
+            img_with_roi_pil = Image.fromarray(img_with_roi)
+
             canvas_lines = st_canvas(
                 fill_color="rgba(255, 255, 255, 0.3)",
                 stroke_width=3,
                 stroke_color="#ff0000",
-                background_image=img,
+                background_image=img_with_roi_pil,
                 update_streamlit=True,
-                height=img.height,
-                width=img.width,
+                height=img_with_roi_pil.height,
+                width=img_with_roi_pil.width,
                 drawing_mode="line",
                 key="canvas_lines",
             )
