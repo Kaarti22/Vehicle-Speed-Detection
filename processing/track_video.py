@@ -9,6 +9,7 @@ from models.detector import YOLOv11Detector
 from models.speed_estimator import SpeedEstimator
 from models.tracker import Tracker
 from tools.db_uploader import upload_csv_to_db
+from tools.ffmpeg_reader import read_frames_ffmpeg
 from logger_config import setup_logger
 
 logger = setup_logger()
@@ -27,6 +28,13 @@ def line_crossed(center, line):
     (x1, y1), (x2, y2) = line
     return y1 <= center[1] <= y2 or y2 <= center[1] <= y1
 
+def gen_frames_from_cap(cap):
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        yield frame.copy()
+
 def process_video(input_path, config_path, output_path):
     config = load_config(config_path)
     roi_polygon = config["polygon_roi"]
@@ -37,12 +45,18 @@ def process_video(input_path, config_path, output_path):
 
     logger.info(f"Loaded config from {config_path}")
 
-    cap = cv2.VideoCapture(input_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-    logger.info(f"Video FPS: {fps}, Resolution: {width} * {height}")
+    use_rtsp = input_path.startswith("rtsp://")
+    if use_rtsp:
+        width, height, fps = 704, 576, 25
+        frame_gen = read_frames_ffmpeg(input_path, width, height)
+        logger.info(f"Using FFmpeg reader for RTSP stream: {input_path} (fps={fps}, resolution={width}x{height})")
+    else:
+        cap = cv2.VideoCapture(input_path)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        frame_gen = gen_frames_from_cap(cap)
+        logger.info(f"Video FPS: {fps}, Resolution: {width} * {height}")
 
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
@@ -53,13 +67,12 @@ def process_video(input_path, config_path, output_path):
     logged_track_ids = set()
 
     frame_num = 0
-    while cap.isOpened():
-        logger.debug(f"[FRAME] Processing frame {frame_num}")
-        ret, frame = cap.read()
-        if not ret:
-            logger.info("End of video reached or cannot read frame.")
+    for frame in frame_gen:
+        if frame is None:
+            logger.info("End of video or frame stream.")
             break
 
+        logger.debug(f"[FRAME] Processing frame {frame_num}")
         detections = detector.detect(frame)
         logger.debug(f"Detections in frame {frame_num}: {len(detections)}")
 
@@ -106,8 +119,10 @@ def process_video(input_path, config_path, output_path):
         
         yield display_frame
         frame_num += 1
+    
+    if not use_rtsp:
+        cap.release()
 
-    cap.release()
     out.release()
 
     output_dir = os.path.dirname(output_path)

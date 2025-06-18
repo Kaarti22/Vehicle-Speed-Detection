@@ -1,40 +1,81 @@
 import sys
 import os
-
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-if ROOT_DIR not in sys.path:
-    sys.path.append(ROOT_DIR)
-
 import streamlit as st
 import cv2
 import numpy as np
 import json
-from PIL import Image, ImageDraw
+from PIL import Image
 from streamlit_drawable_canvas import st_canvas
 from logger_config import setup_logger
 from processing.track_video import process_video
 from config import INPUT_DIR, OUTPUT_DIR, TEMP_DIR
 from tools.draw_roi import draw_polygon_with_opencv
+from tools.rtsp_helper import get_rtsp_streams, safe_rtsp_url, fetch_rtsp_frame_ffmpeg
+
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+if ROOT_DIR not in sys.path:
+    sys.path.append(ROOT_DIR)
 
 logger = setup_logger()
 
 st.set_page_config(layout="wide")
 st.title("🚗 Vehicle Speed Detection with ROI and Virtual Lines")
 
-uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
-if uploaded_file:
-    input_path = os.path.join(INPUT_DIR, uploaded_file.name)
-    with open(input_path, "wb") as f:
-        f.write(uploaded_file.read())
+st.sidebar.title("📡 RTSP Camera Stream")
+use_rtsp = st.sidebar.checkbox("Use RTSP stream instead of uploaded video")
 
-    logger.info(f"Video saved to {input_path}")
-    st.success("✅ Video uploaded successfully!")
+input_path = None
+video_name = None
 
-    cap = cv2.VideoCapture(input_path)
-    ret, frame = cap.read()
-    cap.release()
+if use_rtsp:
+    try:
+        streams = get_rtsp_streams()
+        
+        stream_dict = {name: url for name, url in streams if url}
+        if stream_dict:
+            selected_name = st.sidebar.selectbox("Select Camera Stream", list(stream_dict.keys()))
+            selected_rtsp_url = stream_dict.get(selected_name)
 
-    if ret:
+            # Encode RTSP URL safely
+            input_path = safe_rtsp_url(selected_rtsp_url)
+            video_name = selected_name.replace(" ", "_") + ".mp4"
+
+            st.write(f"📽️ Using stream: {selected_name}")
+            st.text(f"Input path: {input_path}")
+        else:
+            st.warning("No RTSP streams available or API failed.")
+    except Exception as e:
+        logger.error(f"RTSP stream fetch failed: {e}")
+        st.warning("Failed to fetch RTSP streams. Check connection or credentials.")
+else:
+    uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
+    if uploaded_file:
+        input_path = os.path.join(INPUT_DIR, uploaded_file.name)
+        with open(input_path, "wb") as f:
+            f.write(uploaded_file.read())
+
+        logger.info(f"Video saved to {input_path}")
+        st.success("✅ Video uploaded successfully!")
+        video_name = uploaded_file.name
+
+if input_path:
+    logger.info(f"Trying to open: {input_path}")
+    st.text(f"Trying to open: {input_path}")
+    
+    frame = None
+    if use_rtsp:
+        frame = fetch_rtsp_frame_ffmpeg(input_path, width=704, height=576)
+    else:
+        cap = cv2.VideoCapture(input_path)
+        ret, frame = cap.read()
+        cap.release()
+        if not ret:
+            frame = None
+
+    if frame is None:
+        st.error("❌ Failed to open video stream or read frame. Check RTSP URL, credentials, or camera status.")
+        logger.error(f"Failed to read frame from input: {input_path}")
+    else:
         snapshot_path = os.path.join(TEMP_DIR, "snapshot.jpg")
         cv2.imwrite(snapshot_path, frame)
         img = Image.open(snapshot_path)
@@ -62,8 +103,7 @@ if uploaded_file:
             img_cv = np.array(img.convert('RGB'))
             img_cv = cv2.cvtColor(img_cv, cv2.COLOR_RGB2BGR)
 
-            pts = np.array(roi_polygon, np.int32)
-            pts = pts.reshape((-1, 1, 2))
+            pts = np.array(roi_polygon, np.int32).reshape((-1, 1, 2))
             cv2.polylines(img_cv, [pts], isClosed=True, color=(255, 0, 0), thickness=2)
 
             for point in roi_polygon:
@@ -108,19 +148,19 @@ if uploaded_file:
                         "line_1": lines[0],
                         "line_2": lines[1],
                         "real_world_distance_m": distance,
-                        "video_name": uploaded_file.name,
+                        "video_name": video_name,
                     }
 
                     config_path = os.path.join(TEMP_DIR, "config.json")
                     with open(config_path, "w") as f:
                         json.dump(config, f, indent=2)
 
-                    logger.info(f"Processing started for {uploaded_file.name} with config: {config_path}")
+                    logger.info(f"Processing started for {config['video_name']} with config: {config_path}")
                     st.success("🎥 Configuration saved. Starting processing...")
 
                     st_frame = st.empty()
-                    output_path = os.path.join(OUTPUT_DIR, f"processed_{uploaded_file.name}")
-                    
+                    output_path = os.path.join(OUTPUT_DIR, f"processed_{config['video_name']}")
+
                     for idx, frame in enumerate(process_video(input_path, config_path, output_path)):
                         if show_live and idx % 5 == 0:
                             logger.debug(f"Displaying frame {idx}")
